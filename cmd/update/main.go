@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -39,11 +41,22 @@ type UpstreamInfo struct {
 }
 
 var (
-	httpClient = &http.Client{Timeout: 30 * time.Second}
-	buildIDRe  = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)`)
+	manifestClient = &http.Client{Timeout: 15 * time.Second}
+	downloadClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ResponseHeaderTimeout: 30 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}
+	buildIDRe = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+-([0-9]+)`)
 )
 
-func findSourcesPath() (string, error) {
+func findSourcesPath(explicitPath string) (string, error) {
+	if explicitPath != "" {
+		return filepath.Abs(explicitPath)
+	}
 	candidates := []string{
 		"sources.json",
 		"../sources.json",
@@ -71,7 +84,7 @@ func fetchLatestCLI(ctx context.Context) (*UpstreamInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := manifestClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +99,9 @@ func fetchLatestCLI(ctx context.Context) (*UpstreamInfo, error) {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, err
+	}
+	if data.Version == "" || data.URL == "" {
+		return nil, fmt.Errorf("CLI manifest returned empty version or URL")
 	}
 
 	matches := buildIDRe.FindStringSubmatch(data.URL)
@@ -105,7 +121,7 @@ func fetchLatestHub(ctx context.Context) (*UpstreamInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := manifestClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +135,8 @@ func fetchLatestHub(ctx context.Context) (*UpstreamInfo, error) {
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "version:") {
-			version = strings.TrimSpace(strings.TrimPrefix(line, "version:"))
+			rawVer := strings.TrimPrefix(line, "version:")
+			version = strings.Trim(strings.TrimSpace(rawVer), "\"' \t")
 		}
 		if buildID == "" {
 			if matches := buildIDRe.FindStringSubmatch(line); len(matches) >= 2 {
@@ -147,7 +164,7 @@ func fetchLatestACP(ctx context.Context) (*UpstreamInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := manifestClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +207,7 @@ func fetchLatestACP(ctx context.Context) (*UpstreamInfo, error) {
 func prefetchHash(ctx context.Context, url string) (string, error) {
 	// Try `nix store prefetch-file --json <url>` if available to take advantage of Nix store caching
 	if nixPath, err := exec.LookPath("nix"); err == nil {
-		cmd := exec.CommandContext(ctx, nixPath, "store", "prefetch-file", url, "--json")
+		cmd := exec.CommandContext(ctx, nixPath, "--extra-experimental-features", "nix-command flakes", "store", "prefetch-file", url, "--json")
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = os.Stderr
@@ -209,7 +226,7 @@ func prefetchHash(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -226,11 +243,39 @@ func prefetchHash(ctx context.Context, url string) (string, error) {
 	return sriHash, nil
 }
 
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, "sources-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(perm); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpName, path)
+}
+
 func main() {
 	checkOnly := flag.Bool("check", false, "Check only; exit 0 if up to date, 1 if updates available")
+	sourcesFlag := flag.String("sources", "", "Path to sources.json (optional)")
 	flag.Parse()
 
-	sourcesPath, err := findSourcesPath()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	sourcesPath, err := findSourcesPath(*sourcesFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -254,13 +299,12 @@ func main() {
 	fmt.Printf("    Current ACP: %s\n", current.ACP.Version)
 
 	fmt.Println("==> Checking upstream release manifests...")
-	ctx := context.Background()
 
 	var (
-		wg          sync.WaitGroup
-		latestCLI   *UpstreamInfo
-		latestHub   *UpstreamInfo
-		latestACP   *UpstreamInfo
+		wg                     sync.WaitGroup
+		latestCLI              *UpstreamInfo
+		latestHub              *UpstreamInfo
+		latestACP              *UpstreamInfo
 		cliErr, hubErr, acpErr error
 	)
 
@@ -312,48 +356,87 @@ func main() {
 
 	updated := current
 
+	var (
+		downloadWG sync.WaitGroup
+		mu         sync.Mutex
+		firstErr   error
+	)
+
+	setErr := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
 	if cliChanged {
-		fmt.Printf("==> Fetching new hash for Antigravity CLI (%s -> %s)...\n", current.CLI.Version, latestCLI.Version)
-		hash, err := prefetchHash(ctx, latestCLI.DownloadURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to prefetch CLI: %v\n", err)
-			os.Exit(1)
-		}
-		updated.CLI = SourceEntry{
-			Version: latestCLI.Version,
-			BuildID: latestCLI.BuildID,
-			Hash:    hash,
-		}
-		fmt.Printf("    New CLI hash: %s\n", hash)
+		downloadWG.Add(1)
+		go func() {
+			defer downloadWG.Done()
+			fmt.Printf("==> Fetching new hash for Antigravity CLI (%s -> %s)...\n", current.CLI.Version, latestCLI.Version)
+			hash, err := prefetchHash(ctx, latestCLI.DownloadURL)
+			if err != nil {
+				setErr(fmt.Errorf("failed to prefetch CLI: %w", err))
+				return
+			}
+			mu.Lock()
+			updated.CLI = SourceEntry{
+				Version: latestCLI.Version,
+				BuildID: latestCLI.BuildID,
+				Hash:    hash,
+			}
+			mu.Unlock()
+			fmt.Printf("    New CLI hash: %s\n", hash)
+		}()
 	}
 
 	if hubChanged {
-		fmt.Printf("==> Fetching new hash for Antigravity Hub (%s -> %s)...\n", current.Hub.Version, latestHub.Version)
-		hash, err := prefetchHash(ctx, latestHub.DownloadURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to prefetch Hub: %v\n", err)
-			os.Exit(1)
-		}
-		updated.Hub = SourceEntry{
-			Version: latestHub.Version,
-			BuildID: latestHub.BuildID,
-			Hash:    hash,
-		}
-		fmt.Printf("    New Hub hash: %s\n", hash)
+		downloadWG.Add(1)
+		go func() {
+			defer downloadWG.Done()
+			fmt.Printf("==> Fetching new hash for Antigravity Hub (%s -> %s)...\n", current.Hub.Version, latestHub.Version)
+			hash, err := prefetchHash(ctx, latestHub.DownloadURL)
+			if err != nil {
+				setErr(fmt.Errorf("failed to prefetch Hub: %w", err))
+				return
+			}
+			mu.Lock()
+			updated.Hub = SourceEntry{
+				Version: latestHub.Version,
+				BuildID: latestHub.BuildID,
+				Hash:    hash,
+			}
+			mu.Unlock()
+			fmt.Printf("    New Hub hash: %s\n", hash)
+		}()
 	}
 
 	if acpChanged {
-		fmt.Printf("==> Fetching new hash for Antigravity ACP (%s -> %s)...\n", current.ACP.Version, latestACP.Version)
-		hash, err := prefetchHash(ctx, latestACP.DownloadURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to prefetch ACP: %v\n", err)
-			os.Exit(1)
-		}
-		updated.ACP = SourceEntry{
-			Version: latestACP.Version,
-			Hash:    hash,
-		}
-		fmt.Printf("    New ACP hash: %s\n", hash)
+		downloadWG.Add(1)
+		go func() {
+			defer downloadWG.Done()
+			fmt.Printf("==> Fetching new hash for Antigravity ACP (%s -> %s)...\n", current.ACP.Version, latestACP.Version)
+			hash, err := prefetchHash(ctx, latestACP.DownloadURL)
+			if err != nil {
+				setErr(fmt.Errorf("failed to prefetch ACP: %w", err))
+				return
+			}
+			mu.Lock()
+			updated.ACP = SourceEntry{
+				Version: latestACP.Version,
+				Hash:    hash,
+			}
+			mu.Unlock()
+			fmt.Printf("    New ACP hash: %s\n", hash)
+		}()
+	}
+
+	downloadWG.Wait()
+
+	if firstErr != nil {
+		fmt.Fprintf(os.Stderr, "Error downloading updates: %v\n", firstErr)
+		os.Exit(1)
 	}
 
 	outBytes, err := json.MarshalIndent(updated, "", "  ")
@@ -363,7 +446,7 @@ func main() {
 	}
 	outBytes = append(outBytes, '\n')
 
-	if err := os.WriteFile(sourcesPath, outBytes, 0644); err != nil {
+	if err := atomicWriteFile(sourcesPath, outBytes, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to write %s: %v\n", sourcesPath, err)
 		os.Exit(1)
 	}
