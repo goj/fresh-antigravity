@@ -8,5 +8,9 @@
     "version": "2.24.0",
     "buildId": "5780333019398144",
     "hash": "sha256-iAi/WAAzxdE2UULh5m/zdHTwSl+g2fwkt8JMghas3MY="
+  },
+  "acp": {
+    "version": "1.4.1",
+    "hash": "sha256-LjcBLOsqXH/HMJtuZZYjT7Y37jxipRmfZdTL53eHE4Q="
   }
 }

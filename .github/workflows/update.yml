@@ -30,16 +30,14 @@ jobs:
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      - name: Run update script
-        run: |
-          chmod +x update.sh
-          ./update.sh
+      - name: Run updater
+        run: nix run .#update
 
       - name: Verify build if sources changed
         run: |
           if [ -n "$(git status --porcelain sources.json)" ]; then
             echo "==> Sources changed, building packages to verify and cache..."
-            nix build --impure .#antigravity-cli .#antigravity-hub
+            nix build --impure .#antigravity-cli .#antigravity-hub .#antigravity-acp
           else
             echo "==> Sources unchanged. Skipping build."
           fi
@@ -51,8 +49,9 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             CLI_VER=$(jq -r .cli.version sources.json)
             HUB_VER=$(jq -r .hub.version sources.json)
+            ACP_VER=$(jq -r .acp.version sources.json)
             git add sources.json
-            git commit -m "Bump Antigravity (CLI: ${CLI_VER}, Hub: ${HUB_VER})"
+            git commit -m "Bump Antigravity (CLI: ${CLI_VER}, Hub: ${HUB_VER}, ACP: ${ACP_VER})"
             git push
           else
             echo "==> Working tree clean. No commit needed."

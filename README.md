@@ -1,13 +1,16 @@
 # Fresh Antigravity Nix Flake
 
-A Nix flake tracking fresh upstream releases of Google Antigravity ([Antigravity CLI](https://antigravity.google/) and Antigravity Hub).
+A Nix flake tracking fresh upstream releases of Google Antigravity:
+- **`antigravity-cli`**: Antigravity command line interface (`agy`)
+- **`antigravity-hub`**: Antigravity desktop GUI
+- **`antigravity-acp`**: Antigravity Agent Client Protocol server (`agy_acp_server.par`) for SolidCraft, Zed, JetBrains, etc.
 
 ## Why this flake?
 
 Nixpkgs updates can lag behind upstream Google Antigravity binary releases by days or weeks. This flake:
 - Automatically tracks upstream release manifests hourly.
 - Downloads nothing if versions are already up-to-date (fast exit).
-- Packages `antigravity-cli` and `antigravity-hub` without obsolescence assert crashes when nixpkgs catches up.
+- Packages `antigravity-cli`, `antigravity-hub`, and `antigravity-acp` without obsolescence assert crashes when nixpkgs catches up.
 - Can build and push pre-patched derivations to Cachix so downloads and updates are instant.
 
 ## Usage
@@ -34,6 +37,7 @@ In your `flake.nix`:
     # home.packages = [
     #   fresh-antigravity.packages.${system}.antigravity-cli
     #   fresh-antigravity.packages.${system}.antigravity-hub
+    #   fresh-antigravity.packages.${system}.antigravity-acp
     # ];
     #
     # Or using the overlay:
@@ -44,13 +48,9 @@ In your `flake.nix`:
 
 ### Updating Locally
 
-Run the smart update app directly:
+Run the updater app directly:
 ```bash
 nix run .#update
-```
-Or execute:
-```bash
-./update.sh
 ```
 
 ## Automation
