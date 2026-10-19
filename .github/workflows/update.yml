@@ -1,0 +1,59 @@
+name: "Hourly Upstream Check & Bump"
+
+on:
+  schedule:
+    # Run at minute 15 of every hour
+    - cron: "15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Setup Cachix (optional)
+        uses: cachix/cachix-action@v15
+        if: env.CACHIX_AUTH_TOKEN != ''
+        with:
+          name: ${{ vars.CACHIX_NAME || 'goj' }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Run update script
+        run: |
+          chmod +x update.sh
+          ./update.sh
+
+      - name: Verify build if sources changed
+        run: |
+          if [ -n "$(git status --porcelain sources.json)" ]; then
+            echo "==> Sources changed, building packages to verify and cache..."
+            nix build --impure .#antigravity-cli .#antigravity-hub
+          else
+            echo "==> Sources unchanged. Skipping build."
+          fi
+
+      - name: Commit and push changes
+        run: |
+          if [ -n "$(git status --porcelain sources.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            CLI_VER=$(jq -r .cli.version sources.json)
+            HUB_VER=$(jq -r .hub.version sources.json)
+            git add sources.json
+            git commit -m "Bump Antigravity (CLI: ${CLI_VER}, Hub: ${HUB_VER})"
+            git push
+          else
+            echo "==> Working tree clean. No commit needed."
+          fi

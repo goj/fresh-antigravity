@@ -1,0 +1,12 @@
+{
+  "cli": {
+    "version": "1.4.2",
+    "buildId": "4835981233356800",
+    "hash": "sha256-Y5WDesDhk90/5Q8SKOHErqNFypljbVRASrfnQ5fUCRw="
+  },
+  "hub": {
+    "version": "2.24.0",
+    "buildId": "5780333019398144",
+    "hash": "sha256-iAi/WAAzxdE2UULh5m/zdHTwSl+g2fwkt8JMghas3MY="
+  }
+}
