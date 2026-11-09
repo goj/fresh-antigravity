@@ -5,9 +5,9 @@
     "hash": "sha256-G0hQWZzOc6F/lP+0It87+VMVMbd9vdxAwaQ14MLBaAc="
   },
   "hub": {
-    "version": "2.29.0",
-    "buildId": "5723181030440960",
-    "hash": "sha256-OmdXBLmzowcOBsDVDTUzBDr1RSHNFcZUlOnNwr8YlmQ="
+    "version": "2.29.1",
+    "buildId": "5241471524274176",
+    "hash": "sha256-RnhgQlE5H+q4q3fm5aUj41C+aJgQ8zjHTV7c5pDkP6M="
   },
   "acp": {
     "version": "1.4.5",
