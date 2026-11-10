@@ -1,13 +1,13 @@
 {
   "cli": {
-    "version": "1.5.4",
-    "buildId": "5037094733742080",
-    "hash": "sha256-lszP7G8gXbj6QBZTG9oVZ4J/HQVglSOHNa9ri1Wn99Y="
+    "version": "1.5.5",
+    "buildId": "6740358537805824",
+    "hash": "sha256-v+LCXt6t2YwpQkF8mXLuDh+qPwr9yQcR6E1fOmM7UHg="
   },
   "hub": {
-    "version": "2.30.0",
-    "buildId": "6386428939206656",
-    "hash": "sha256-72ff6hoKjy2Yzhkl+uMTLUewXBp+jUsKH3YdBghae98="
+    "version": "2.31.0",
+    "buildId": "6379060755038208",
+    "hash": "sha256-MMzeof/wv2Q7f256pJMkDRPsHYZqz0+JwqbMOiwzNpw="
   },
   "acp": {
     "version": "1.4.5",
