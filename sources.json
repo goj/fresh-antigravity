@@ -5,12 +5,12 @@
     "hash": "sha256-f6nMbfDQlWJpPWN8QGqGwbD1KrM2RxSx/S15zGBg1LI="
   },
   "hub": {
-    "version": "2.33.1",
-    "buildId": "5402359824777216",
-    "hash": "sha256-q1jo/8I1WBi+/mnR6wqIl+PnXyQ+xC65PPLkFrxXYNM="
+    "version": "2.34.0",
+    "buildId": "5887025308631040",
+    "hash": "sha256-R4xo+Gye9hpQIYWjnpzuxmsSdqalOxkaGbDZzoaYNts="
   },
   "acp": {
-    "version": "1.5.0",
-    "hash": "sha256-NvNz6JSO3xcns5x9YrVyLWpEdL39crBK09be9XGAjJ8="
+    "version": "1.5.2",
+    "hash": "sha256-md2GEkUIBQEWGde4RHzjdMKJ4AVJ2FV/NnkOHdYlaFI="
   }
 }
