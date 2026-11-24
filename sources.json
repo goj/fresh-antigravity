@@ -1,8 +1,8 @@
 {
   "cli": {
-    "version": "1.5.15",
-    "buildId": "5514532022517760",
-    "hash": "sha256-jZkTKYYCBJ7ynpZp81JStreVcZec4b0PsndTx7rIQRQ="
+    "version": "1.5.16",
+    "buildId": "5250855658717184",
+    "hash": "sha256-m9qyNNBrrRphviMhByZS6wa+eLr/Gsv65HMx2loJCrw="
   },
   "hub": {
     "version": "2.34.0",
